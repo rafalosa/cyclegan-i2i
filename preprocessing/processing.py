@@ -4,9 +4,10 @@ import shutil
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import List
+import tqdm
 
 
-def merge_and_copy(dataset_path: str, processed_path: str):
+def _merge_and_copy(dataset_path: str, processed_path: str):
 
     if not ("train" in os.listdir(dataset_path) and "val" not in os.listdir()):
         raise RuntimeError("Dataset path should contain train and val directories.")
@@ -24,11 +25,11 @@ def merge_and_copy(dataset_path: str, processed_path: str):
 
     img_glob = glob.glob(os.path.join(dataset_path, "**", "*.jpg"), recursive=True)
 
-    for i, image_path in enumerate(img_glob):
+    for i, image_path in enumerate(tqdm.tqdm(img_glob, desc="Copying original images")):
         shutil.copyfile(image_path, os.path.join(processed_path, "all_samples", f"{i:04d}.jpg"))
 
 
-def split_combined_images(images_path: str, div=2):
+def _split_combined_images(images_path: str, div=2):
     img_glob = glob.glob(os.path.join(images_path, "all_samples", "*.jpg"))
 
     maps_path = os.path.join(images_path, "maps")
@@ -40,7 +41,13 @@ def split_combined_images(images_path: str, div=2):
     if "maps" not in os.listdir(images_path):
         os.mkdir(maps_path)
 
-    for i, img_path in enumerate(img_glob):
+    check_glob_sat = glob.glob(os.path.join(satellite_path, "*.jpg"))
+    check_glob_map = glob.glob(os.path.join(maps_path, "*.jpg"))
+
+    if check_glob_sat or check_glob_map:
+        return
+
+    for i, img_path in enumerate(tqdm.tqdm(img_glob, desc="Splitting original images")):
         img = np.array(plt.imread(img_path))
         satellite_image, map_image = np.split(img, div, axis=1)
 
@@ -48,22 +55,27 @@ def split_combined_images(images_path: str, div=2):
         plt.imsave(os.path.join(maps_path, f"{i:04d}.jpg"), map_image)
 
 
-def divide_images(images_path: str, divisor=2):
+def _divide_images(images_path: str, divisor=2):
 
-    def load_and_split(img_list: List[str], output: str):
+    def load_and_split(img_list: List[str], output: str, message: str):
+
+        imgs_num = len(img_list) * divisor**2
 
         index = 0
 
-        for image in img_list:
-            img = np.array(plt.imread(image))
-            cols = np.split(img, divisor, axis=1)
-            for col in cols:
-                images_from_column = np.split(col, divisor, axis=0)
-                for square_image in images_from_column:
-                    plt.imsave(os.path.join(output, f"{index:04d}.jpg"), square_image)
-                    index += 1
+        with tqdm.tqdm(total=imgs_num, desc=message) as progress_bar:
 
-    result_dir = f"{divisor}x{divisor}"
+            for image in img_list:
+                img = np.array(plt.imread(image))
+                cols = np.split(img, divisor, axis=1)
+                for col in cols:
+                    images_from_column = np.split(col, divisor, axis=0)
+                    for square_image in images_from_column:
+                        plt.imsave(os.path.join(output, f"{index:04d}.jpg"), square_image)
+                        progress_bar.update(1)
+                        index += 1
+
+    result_dir = f"{600//divisor}x{600//divisor}"
     maps_dir = os.path.join(images_path, result_dir, "maps")
     satellite_dir = os.path.join(images_path, result_dir, "satellite")
 
@@ -82,12 +94,12 @@ def divide_images(images_path: str, divisor=2):
     maps_glob = glob.glob(os.path.join(images_path, "maps", "*.jpg"))
     satellite_glob = glob.glob(os.path.join(images_path, "satellite", "*.jpg"))
 
-    load_and_split(maps_glob, maps_dir)
-    load_and_split(satellite_glob, satellite_dir)
+    load_and_split(maps_glob, maps_dir, "Dividing map images")
+    load_and_split(satellite_glob, satellite_dir, "Dividing satellite images")
 
 
-if __name__ == "__main__":
+def split_and_divide(dataset_path: str, processed_path: str, final_image_divisor: int):
 
-    # split_combined_images("../processed")
-    divide_images("../processed", divisor=2)
-
+    _merge_and_copy(dataset_path, processed_path)
+    _split_combined_images(processed_path)
+    _divide_images(processed_path, divisor=final_image_divisor)

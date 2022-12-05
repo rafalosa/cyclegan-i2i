@@ -8,6 +8,5 @@ if __name__ == '__main__':
 
     target = "dataset"
     dataset.get_maps_dataset(target_directory=target, verbose=True)
-
-    processing.merge_and_copy("dataset/maps", "processed")
+    processing.split_and_divide(dataset_path="dataset/maps", processed_path="processed", final_image_divisor=2)
 

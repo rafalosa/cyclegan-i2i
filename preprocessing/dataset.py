@@ -2,20 +2,26 @@ import wget
 import os
 import tarfile
 import glob
+import tqdm
 
 
 def get_maps_dataset(target_directory: str, verbose=True):
 
-    def _progress_bar(current, total, width=80):
-        msg = f"Downloading: {current / total * 100:.2f}% [{current / 1024 ** 2:.1f} / {total / 1024 ** 2:.1f}] MB"
-        print("\r" + msg, end="")
+    def unpack_dataset(path_raw: str, path_unpack: str):
 
-    def _unpack_dataset(path_raw: str, path_unpack: str):
-        if verbose:
-            print("Unpacking dataset")
         data_file = tarfile.open(path_raw)
         data_file.extractall(path_unpack)
         data_file.close()
+
+    def create_progress_bar_update(bar: tqdm.tqdm):
+        def progress_bar(current, total, *args):
+            if bar.total != total:
+                bar.total = total
+                print("\r", end="")
+
+            bar.update(current - bar.n)
+
+        return progress_bar
 
     dataset_dir = target_directory
     dataset_temp_dir = ".raw_data"
@@ -28,8 +34,12 @@ def get_maps_dataset(target_directory: str, verbose=True):
 
     if dataset_temp_name not in os.listdir(dataset_temp_dir):
         if verbose:
-            print("Data set not found, downloading...")
-        wget.download(dataset_url, os.path.join(dataset_temp_dir, dataset_temp_name), bar=_progress_bar)
+            bar_ = tqdm.tqdm(desc="Downloading dataset")
+            wget.download(dataset_url, os.path.join(dataset_temp_dir, dataset_temp_name),
+                          bar=create_progress_bar_update(bar_))
+        else:
+            wget.download(dataset_url, os.path.join(dataset_temp_dir, dataset_temp_name), bar=None)
+
         if verbose:
             print("")
 
@@ -43,7 +53,7 @@ def get_maps_dataset(target_directory: str, verbose=True):
 
     if dataset_dir not in os.listdir():
         os.mkdir(dataset_dir)
-        _unpack_dataset(os.path.join(dataset_temp_dir, dataset_temp_name), dataset_dir)
+        unpack_dataset(os.path.join(dataset_temp_dir, dataset_temp_name), dataset_dir)
     else:
         if any(os.listdir(dataset_dir)):
             response = input("Target directory exists and is not empty, are you sure you"
@@ -55,11 +65,11 @@ def get_maps_dataset(target_directory: str, verbose=True):
                         break
 
             if response == "y":
-                _unpack_dataset(os.path.join(dataset_temp_dir, dataset_temp_name), dataset_dir)
+                unpack_dataset(os.path.join(dataset_temp_dir, dataset_temp_name), dataset_dir)
             else:
                 raise RuntimeError("Specify different target dataset directory.")
         else:
-            _unpack_dataset(os.path.join(dataset_temp_dir, dataset_temp_name), dataset_dir)
+            unpack_dataset(os.path.join(dataset_temp_dir, dataset_temp_name), dataset_dir)
 
 
 
