@@ -5,6 +5,7 @@ from discriminator import PatchGANDiscriminator
 from typing import Any, Tuple, Optional
 import glob
 import numpy as np
+import tensorflow_datasets as tfds
 
 
 class GeneratorLoss:
@@ -76,9 +77,6 @@ class GAN(tf.keras.models.Model):
 
         input_image, target_image = data
 
-        input_image = tf.concat(input_image, axis=0)  # TODO: Nie wiem czy to tu ma być - do obgadania
-        target_image = tf.concat(target_image, axis=0)
-
         with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
             generator_out = self.generator(input_image, training=True)
             discriminator_out_for_target = self.discriminator([input_image, target_image], training=True)
@@ -120,27 +118,36 @@ def load_images(path, num):
     return result
 
 
+def load(imp):
+    image = tf.io.read_file(imp)
+    image = tf.io.decode_jpeg(image)
+    image = tf.cast(image, tf.float32)/255.0
+    return image
+
+
 if __name__ == "__main__":
+
+    BUFFER_SIZE = 100
+    BATCH_SIZE = 8
 
     model = GAN(input_dim=300, seed=666)
     model.compile(discriminator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5),
                   generator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5))
 
-    dataset = load_images("../processed/300x300", num=100)
-    sats = [tup[0] for tup in dataset]
-    maps = [tup[1] for tup in dataset]
+    train_dataset_sats = tf.data.Dataset.list_files('../processed/300x300/satellite/*.jpg', shuffle=False)
+    train_dataset_sats = train_dataset_sats.map(load, num_parallel_calls=tf.data.AUTOTUNE, name="images")
+    train_dataset_sats = train_dataset_sats.batch(BATCH_SIZE)
 
-    model.fit(sats, maps, epochs=100)
+    train_dataset_maps = tf.data.Dataset.list_files('../processed/300x300/maps/*.jpg', shuffle=False)
+    train_dataset_maps = train_dataset_maps.map(load, num_parallel_calls=tf.data.AUTOTUNE, name="images")
+    train_dataset_maps = train_dataset_maps.batch(BATCH_SIZE)
+
+    dataset = tf.data.Dataset.zip((train_dataset_sats, train_dataset_maps))
+
+    model.fit(dataset, epochs=1)
 
     sample = plt.imread("../processed/300x300/satellite/0063.jpg")
-    map_sample = plt.imread("../processed/300x300/maps/0063.jpg")
+    pred = model.generator.predict(sample[tf.newaxis], batch_size=1)
 
-    pred = model.generator.predict(sample[tf.newaxis])
-
-    plt.subplot(1, 3, 1)
-    plt.imshow(sample)
-    plt.subplot(1, 3, 2)
-    plt.imshow(map_sample)
-    plt.subplot(1, 3, 3)
     plt.imshow(pred.reshape(300, 300, 3))
     plt.show()
