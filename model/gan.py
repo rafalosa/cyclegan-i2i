@@ -1,11 +1,11 @@
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from generator import UNetGenerator
-from discriminator import PatchGANDiscriminator
+from model.generator import UNetGenerator
+from model.discriminator import PatchGANDiscriminator
 from typing import Any, Tuple, Optional
 import glob
 import numpy as np
-import tensorflow_datasets as tfds
+# import tensorflow_datasets as tfds
 
 
 class GeneratorLoss:
@@ -94,35 +94,6 @@ class GAN(tf.keras.models.Model):
 
         return {"discr_loss": discriminator_loss, "gene_loss": generator_total_loss}
 
-
-def load_images(path, num):
-
-    result = []
-
-    sat_images_paths = glob.glob(f"{path}/satellite/*.jpg")
-    map_images_paths = glob.glob(f"{path}/maps/*.jpg")
-
-    for i, (sat_path, map_path) in enumerate(zip(sat_images_paths, map_images_paths)):
-
-        sat_image = tf.io.read_file(sat_path)
-        sat_image = tf.io.decode_jpeg(sat_image)
-
-        map_image = tf.io.read_file(map_path)
-        map_image = tf.io.decode_jpeg(map_image)
-
-        result.append((tf.cast(sat_image, tf.float32)[tf.newaxis]/255.0, tf.cast(map_image, tf.float32)[tf.newaxis]/255.0))
-
-        if i >= num:
-            break
-
-    return result
-
-
-def load(imp):
-    image = tf.io.read_file(imp)
-    image = tf.io.decode_jpeg(image)
-    image = tf.cast(image, tf.float32)/255.0
-    return image
 
 
 if __name__ == "__main__":
