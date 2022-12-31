@@ -7,10 +7,13 @@ import numpy as np
 
 class PatchGANDiscriminator(tf.keras.models.Model):
 
-    def __init__(self, input_dim: int = 300, seed: Any = None):
+    def __init__(self, input_dim: int = 300, seed: Any = None, comparing: bool = True):
         super(PatchGANDiscriminator, self).__init__()
 
-        self.concatenate_layer = tf.keras.layers.Concatenate()  # (batch_size, 300, 300, 6)
+        self.comparing = comparing
+
+        if comparing:
+            self.concatenate_layer = tf.keras.layers.Concatenate()  # (batch_size, 300, 300, 6)
 
         self.downsamplers: List[tf.keras.layers.Layer] = [
             downsampler(64, 4, apply_bn=False, seed=seed, input_shape=(input_dim, input_dim, 6)),  # (batch_size, 150, 150, 64)
@@ -33,7 +36,10 @@ class PatchGANDiscriminator(tf.keras.models.Model):
 
     def call(self, inputs: List, training=None, mask=None):
 
-        x = self.concatenate_layer(inputs)
+        x = inputs
+
+        if self.comparing:
+            x = self.concatenate_layer(x)
 
         for down in self.downsamplers:
             x = down(x)
