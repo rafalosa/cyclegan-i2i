@@ -2,7 +2,7 @@ import tensorflow as tf
 from typing import List, Any, Optional
 import numpy as np
 import matplotlib.pyplot as plt
-from sampling import transposed_upsampler, downsampler
+from .sampling import transposed_upsampler, downsampler
 
 
 class UNetGenerator(tf.keras.models.Model):

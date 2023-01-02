@@ -135,8 +135,8 @@ class CycleGAN(tf.keras.models.Model):
     def call(self, inputs, training=None, mask=None):
         pass
 
-    def fit(self, *args, **kwargs):
-        super(CycleGAN, self).fit(*args, **kwargs)
+    # def fit(self, *args, **kwargs):
+    #     super(CycleGAN, self).fit(*args, **kwargs)
 
     def train_step(self, data):
         real_input_domain_image, real_target_domain_image = data
@@ -191,6 +191,9 @@ class CycleGAN(tf.keras.models.Model):
                                                                       self.input_domain_discriminator.trainable_variables))
         self.target_domain_discriminator_optimizer.apply_gradients(zip(target_domain_discriminator_grads,
                                                                        self.target_domain_discriminator.trainable_variables))
+
+        return {"input_discr_loss": input_domain_discriminator_loss, "i2t_gene_loss": total_i2t_generator_loss,
+                "target_discr_loss": target_domain_discriminator_loss, "t2i_gene_loss": total_t2i_generator_loss}
 
     def generate_i2t(self, image):
         return self.i2t_generator(image)

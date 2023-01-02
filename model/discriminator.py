@@ -1,6 +1,6 @@
 import tensorflow as tf
 from typing import List, Any
-from sampling import downsampler
+from .sampling import downsampler
 import matplotlib.pyplot as plt
 import numpy as np
 
