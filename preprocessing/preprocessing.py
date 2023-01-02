@@ -39,16 +39,20 @@ def train_test_load(input_img_dir: str, target_img_dir: str, val_test_size: floa
 
     val_test_size = int(len(input_dataset) * val_test_size)
 
-    test_input_dataset = input_dataset.take(val_test_size).batch(batch_size)
+    test_input_dataset = input_dataset.take(val_test_size).cache().map(
+        resize, num_parallel_calls=tf.data.AUTOTUNE).batch(batch_size)
     input_dataset = input_dataset.skip(val_test_size)
 
-    val_input_dataset = input_dataset.take(val_test_size).batch(batch_size)
+    val_input_dataset = input_dataset.take(val_test_size).cache().map(
+        resize, num_parallel_calls=tf.data.AUTOTUNE).batch(batch_size)
     input_dataset = input_dataset.skip(val_test_size)
 
-    test_target_dataset = target_dataset.take(val_test_size).batch(batch_size)
+    test_target_dataset = target_dataset.take(val_test_size).cache().map(
+        resize, num_parallel_calls=tf.data.AUTOTUNE).batch(batch_size)
     target_dataset = target_dataset.skip(val_test_size)
 
-    val_target_dataset = target_dataset.take(val_test_size).batch(batch_size)
+    val_target_dataset = target_dataset.take(val_test_size).cache().map(
+        resize, num_parallel_calls=tf.data.AUTOTUNE).batch(batch_size)
     target_dataset = target_dataset.skip(val_test_size)
 
     if augmentation:
@@ -78,3 +82,5 @@ if __name__ == '__main__':
     plt.subplot(122)
     plt.imshow(next(iter(train_target_dataset))[0] * 0.5 + 0.5)
     plt.show()
+    print(next(iter(val_input_dataset))[0].shape)
+    print(next(iter(test_input_dataset))[0].shape)
