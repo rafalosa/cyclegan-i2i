@@ -11,18 +11,20 @@ class PatchGANDiscriminator(tf.keras.models.Model):
         super(PatchGANDiscriminator, self).__init__()
 
         self.comparing = comparing
+        channels = 3
 
         if comparing:
             self.concatenate_layer = tf.keras.layers.Concatenate()  # (batch_size, 300, 300, 6)
+            channels = 6
 
         self.downsamplers: List[tf.keras.layers.Layer] = [
-            downsampler(64, 4, apply_bn=False, seed=seed, input_shape=(input_dim, input_dim, 6)),  # (batch_size, 150, 150, 64)
+            downsampler(64, 4, apply_bn=False, seed=seed, input_shape=(input_dim, input_dim, channels)),  # (batch_size, 150, 150, 64)
             downsampler(128, 4, seed=seed),  # (batch_size, 75, 75, 128)
             downsampler(256, 4, seed=seed)  # (batch_size, 38, 38, 256)
         ]
 
         initializer = tf.random_normal_initializer(0., 0.02)
-        self.conv_layer = tf.keras.layers.Conv2D(512, 6, strides=1, kernel_initializer=initializer,
+        self.conv_layer = tf.keras.layers.Conv2D(512, 4, strides=1, kernel_initializer=initializer,
                                                  use_bias=False)   # (batch_size, 33, 33, 512)
 
         self.bn = tf.keras.layers.BatchNormalization()
