@@ -158,10 +158,10 @@ class CycleGAN(tf.keras.models.Model):
             input_domain_discriminator_fake = self.input_domain_discriminator(fake_input_domain_image, training=True)
             target_domain_discriminator_fake = self.target_domain_discriminator(fake_target_domain_image, training=True)
 
-            i2t_generator_loss = self.generator_loss(target_domain_discriminator_fake)
-            t2i_generator_loss = self.generator_loss(input_domain_discriminator_fake)
+            i2t_generator_loss, _, _ = self.generator_loss(target_domain_discriminator_fake)
+            t2i_generator_loss, _, _ = self.generator_loss(input_domain_discriminator_fake)
 
-            input_domain_cycle_loss = tf.reduce_mean(tf.abs(real_input_domain_image - cycled_target_domain_image)) * .5 * 100
+            input_domain_cycle_loss = tf.reduce_mean(tf.abs(real_input_domain_image - cycled_input_domain_image)) * .5 * 100
             target_domain_cycle_loss = tf.reduce_mean(tf.abs(real_target_domain_image - cycled_target_domain_image)) * .5 * 100
 
             input_domain_identity_loss = tf.reduce_mean(tf.abs(real_input_domain_image - input_domain_identity)) * .5 * 100
@@ -198,27 +198,28 @@ class CycleGAN(tf.keras.models.Model):
     def generate_t2i(self, image):
         return self.t2i_generator(image)
 
+
 if __name__ == "__main__":
 
-    BUFFER_SIZE = 100
-    BATCH_SIZE = 8
-
-    model = GAN(input_dim=300, seed=666)
-    model.compile(discriminator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5),
-                  generator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5))
-
-    # model = CycleGAN(input_dim=300, seed=666)
+    # BUFFER_SIZE = 100
+    # BATCH_SIZE = 8
+    #
+    # model = GAN(input_dim=256, seed=666)
+    # model.compile(discriminator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5),
+    #               generator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5))
+    #
+    # # model = CycleGAN(input_dim=300, seed=666)
 
     (train_input_dataset, test_input_dataset, val_input_dataset, train_target_dataset, test_target_dataset,
      val_target_dataset) = train_test_load(input_img_dir="../processed/300x300/satellite", target_img_dir="../processed/300x300/maps",
-                    val_test_size=.2, paired=False, augmentation=False)
+                                           val_test_size=.2, paired=False)
 
     training_dataset = tf.data.Dataset.zip((train_input_dataset, train_target_dataset))
 
-    model.fit(training_dataset, epochs=1)
+    # model.fit(training_dataset, epochs=1)
+    #
+    # sample = plt.imread("../processed/300x300/satellite/0063.jpg")
+    # pred = model.generator.predict(sample[tf.newaxis], batch_size=1)
 
-    sample = plt.imread("../processed/300x300/satellite/0063.jpg")
-    pred = model.generator.predict(sample[tf.newaxis], batch_size=1)
-
-    plt.imshow(pred.reshape(300, 300, 3))
+    plt.imshow(train_input_dataset[0])
     plt.show()
