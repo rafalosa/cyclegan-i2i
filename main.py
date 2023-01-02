@@ -52,31 +52,28 @@ if __name__ == '__main__':
                   target_domain_discriminator_optimizer=Adam(2e-4, beta_1=0.5),
                   t2i_generator_optimizer=Adam(2e-4, beta_1=0.5))
 
-    checkpoint = tf.train.Checkpoint(i2t_generator=model.i2t_generator,
-                                     t2i_generator=model.t2i_generator,
-                                     input_domain_discriminator=model.input_domain_discriminator,
-                                     target_domain_discriminator=model.target_domain_discriminator,
-                                     i2t_generator_opti=model.i2t_generator_optimizer,
-                                     t2i_generator_opti=model.t2i_generator_optimizer,
-                                     input_domain_discriminator_opti=model.input_domain_discriminator_optimizer,
-                                     target_domain_discriminator_opti=model.target_domain_discriminator_optimizer)
+    checkpoint = tf.train.Checkpoint(cycle_gan=model)
 
     checkpoint_manager = tf.train.CheckpointManager(checkpoint, training_dir_name, max_to_keep=3)
 
-    # todo: Figure out how is this exactly supposed to work when I have access to the main machine.
     if checkpoint_manager.latest_checkpoint:
         checkpoint.restore(checkpoint_manager.latest_checkpoint)
+        print("Restored last model checkpoint.")
 
     (train_input_dataset, test_input_dataset, val_input_dataset, train_target_dataset, test_target_dataset,
-     val_target_dataset) = train_test_load(input_img_dir="../processed/300x300/satellite",
-                                           target_img_dir="../processed/300x300/maps",
-                                           val_test_size=split, paired=False)
+     val_target_dataset) = train_test_load(input_img_dir="processed/300x300/satellite",
+                                           target_img_dir="processed/300x300/maps",
+                                           val_test_size=split, paired=False, augmentation=False)
 
     training_dataset = tf.data.Dataset.zip((train_input_dataset, train_target_dataset))
     test_dataset = tf.data.Dataset.zip((test_input_dataset, test_target_dataset))
     val_dataset = tf.data.Dataset.zip((val_input_dataset, val_target_dataset))
 
     history = model.fit(training_dataset, epochs=epochs,
+                        batch_size=8,
                         verbose=0,
                         callbacks=[TrainLogger(checkpoint_manager=checkpoint_manager, save_every=5)],
                         validation_data=val_dataset)
+
+
+
