@@ -50,7 +50,7 @@ if __name__ == '__main__':
         "split": split,
         "seed": seed,
         "training_dir": training_dir_name,
-        "architecture": "CycleGAN"
+        "architecture": "Pix2PixGAN"
     }
 
     target = "dataset"
