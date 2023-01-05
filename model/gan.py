@@ -7,6 +7,7 @@ from preprocessing import train_test_load
 import glob
 import numpy as np
 # import tensorflow_datasets as tfds
+import wandb
 
 
 class GeneratorLoss:
@@ -101,10 +102,12 @@ class GAN(tf.keras.models.Model):
 
 class CycleGAN(tf.keras.models.Model):
 
-    def __init__(self, input_dim: int = 256, seed: Any = None):
+    def __init__(self, input_dim: int = 256, seed: Any = None, lambda_: float = 10):
         super(CycleGAN, self).__init__()
 
         self.seed: Any = seed
+
+        self.lambda_ = lambda_
 
         self.input_domain_discriminator: tf.keras.models.Model = PatchGANDiscriminator(input_dim=input_dim,
                                                                                        seed=seed, comparing=False)
@@ -114,8 +117,9 @@ class CycleGAN(tf.keras.models.Model):
                                                                                         seed=seed, comparing=False)
         self.t2i_generator: tf.keras.models.Model = UNetGenerator(input_dim=input_dim, seed=seed)
 
-        self.generator_loss = GeneratorLoss(lambda_=100)
+        self.generator_loss = GeneratorLoss(lambda_=lambda_)
         self.discriminator_loss = DiscriminatorLoss()
+        self.test_metric = tf.keras.metrics.RootMeanSquaredError()
 
         self.i2t_generator_optimizer = None
         self.input_domain_discriminator_optimizer = None
@@ -161,19 +165,19 @@ class CycleGAN(tf.keras.models.Model):
             i2t_generator_loss, _, _ = self.generator_loss(target_domain_discriminator_fake)
             t2i_generator_loss, _, _ = self.generator_loss(input_domain_discriminator_fake)
 
-            input_domain_cycle_loss = tf.reduce_mean(tf.abs(real_input_domain_image - cycled_input_domain_image)) * .5 * 100
-            target_domain_cycle_loss = tf.reduce_mean(tf.abs(real_target_domain_image - cycled_target_domain_image)) * .5 * 100
+            input_domain_cycle_loss = tf.reduce_mean(tf.abs(real_input_domain_image - cycled_input_domain_image)) * self.lambda_
+            target_domain_cycle_loss = tf.reduce_mean(tf.abs(real_target_domain_image - cycled_target_domain_image)) * self.lambda_
 
-            input_domain_identity_loss = tf.reduce_mean(tf.abs(real_input_domain_image - input_domain_identity)) * .5 * 100
-            target_domain_identity_loss = tf.reduce_mean(tf.abs(real_target_domain_image - target_domain_identity)) * .5 * 100
+            input_domain_identity_loss = tf.reduce_mean(tf.abs(real_input_domain_image - input_domain_identity)) * .5 * self.lambda_
+            target_domain_identity_loss = tf.reduce_mean(tf.abs(real_target_domain_image - target_domain_identity)) * .5 * self.lambda_
 
             cycle_loss = input_domain_cycle_loss + target_domain_cycle_loss
 
             total_i2t_generator_loss = i2t_generator_loss + cycle_loss + target_domain_identity_loss
             total_t2i_generator_loss = t2i_generator_loss + cycle_loss + input_domain_identity_loss
 
-            input_domain_discriminator_loss = self.discriminator_loss(input_domain_discriminator_real, input_domain_discriminator_fake)
-            target_domain_discriminator_loss = self.discriminator_loss(target_domain_discriminator_real, target_domain_discriminator_fake)
+            input_domain_discriminator_loss = self.discriminator_loss(input_domain_discriminator_real, input_domain_discriminator_fake, coefficient=.5)
+            target_domain_discriminator_loss = self.discriminator_loss(target_domain_discriminator_real, target_domain_discriminator_fake, coefficient=.5)
 
         i2t_generator_grads = tape.gradient(total_i2t_generator_loss,
                                             self.i2t_generator.trainable_variables)
@@ -195,6 +199,19 @@ class CycleGAN(tf.keras.models.Model):
         return {"input_discr_loss": input_domain_discriminator_loss, "i2t_gene_loss": total_i2t_generator_loss,
                 "target_discr_loss": target_domain_discriminator_loss, "t2i_gene_loss": total_t2i_generator_loss}
 
+    def test_step(self, data):
+
+        # for paired images
+        input_domain_ground_truth, target_domain_ground_truth = data
+
+        target_domain_generated = self.i2t_generator(input_domain_ground_truth, training=False)
+        input_domain_generated = self.t2i_generator(target_domain_ground_truth, training=False)
+
+        target_domain_metric = self.test_metric(target_domain_ground_truth, target_domain_generated)
+        input_domain_metric = self.test_metric(input_domain_ground_truth, input_domain_generated)
+
+        return {"cumulative_generator_error": target_domain_metric+input_domain_metric}
+
     def generate_i2t(self, image):
         return self.i2t_generator(image)
 
@@ -203,26 +220,31 @@ class CycleGAN(tf.keras.models.Model):
 
 
 if __name__ == "__main__":
-
-    # BUFFER_SIZE = 100
-    # BATCH_SIZE = 8
+    pass
+    # import wandb
     #
-    # model = GAN(input_dim=256, seed=666)
-    # model.compile(discriminator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5),
-    #               generator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5))
+    # wandb.init(project="test-project", entity="golem-rm")
     #
-    # # model = CycleGAN(input_dim=300, seed=666)
-
-    (train_input_dataset, test_input_dataset, val_input_dataset, train_target_dataset, test_target_dataset,
-     val_target_dataset) = train_test_load(input_img_dir="../processed/300x300/satellite", target_img_dir="../processed/300x300/maps",
-                                           val_test_size=.2, paired=False)
-
-    training_dataset = tf.data.Dataset.zip((train_input_dataset, train_target_dataset))
-
-    # model.fit(training_dataset, epochs=1)
+    # wandb.config = {
+    #     "learning_rate": 2e-4,
+    #     "epochs": 2,
+    #     "batch_size": 8,
+    #     "split": 0.2
+    # }
     #
-    # sample = plt.imread("../processed/300x300/satellite/0063.jpg")
-    # pred = model.generator.predict(sample[tf.newaxis], batch_size=1)
-
-    plt.imshow(train_input_dataset[0])
-    plt.show()
+    # with tf.compat.v1.Session() as sess:
+    #
+    #     model = GAN(input_dim=256, seed=666)
+    #     model.compile(discriminator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5),
+    #                   generator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5))
+    #
+    #     (train_input_dataset, test_input_dataset, val_input_dataset, train_target_dataset, test_target_dataset,
+    #      val_target_dataset) = train_test_load(input_img_dir="../processed/300x300/satellite", target_img_dir="../processed/300x300/maps",
+    #                                            val_test_size=.2, paired=True, augmentation=False)
+    #
+    #     training_dataset = tf.data.Dataset.zip((train_input_dataset, train_target_dataset))
+    #
+    #     model.fit(training_dataset, epochs=2)
+    #     #
+    #     # sample = plt.imread("../processed/300x300/satellite/0063.jpg")
+    #     # pred = model.generator.predict(sample[tf.newaxis], batch_size=1)
