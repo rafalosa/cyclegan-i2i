@@ -3,3 +3,4 @@ __pycache__
 .idea
 .jpg
 cycle_gan_training*
+pix2pix_gan_training*

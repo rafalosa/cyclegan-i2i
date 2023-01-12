@@ -38,6 +38,10 @@ class TrainLogger(tf.keras.callbacks.Callback):
                 "target_domain_generated": [wandb.Image(i2t_image) for i2t_image in i2t_images],
                 "target_domain_gt": [wandb.Image(image) for image in self.image_data[1]],
                 "input_domain_generated": [wandb.Image(t2i_image) for t2i_image in t2i_images],
+                "i2t_learning_rate": tf.keras.backend.get_value(self.model.i2t_generator_optimizer.lr),
+                "t2i_learning_rate": tf.keras.backend.get_value(self.model.t2i_generator_optimizer.lr),
+                "input_discr_learning_rate": tf.keras.backend.get_value(self.model.input_domain_discriminator_optimizer.lr),
+                "target_discr_learning_rate": tf.keras.backend.get_value(self.model.target_domain_discriminator_optimizer.lr),
                 **logs
             })
 

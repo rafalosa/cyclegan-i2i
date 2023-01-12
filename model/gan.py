@@ -1,19 +1,15 @@
 import tensorflow as tf
-import matplotlib.pyplot as plt
-from model.generator import UNetGenerator
+from model.generator import UNetGenerator, ResNetGenerator
 from model.discriminator import PatchGANDiscriminator
-from typing import Any, Tuple, Optional
-from preprocessing import train_test_load
-import glob
+from typing import Any, Literal, Optional
 import numpy as np
-# import tensorflow_datasets as tfds
-import wandb
 
 
 class GeneratorLoss:
 
     def __init__(self, lambda_: float = 100):
         self._bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        # self._bce = tf.keras.losses.MeanSquaredError()
         self._mae = tf.keras.losses.MeanAbsoluteError()
         self.lambda_ = lambda_
 
@@ -35,6 +31,7 @@ class DiscriminatorLoss:
 
     def __init__(self):
         self._bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        # self._bce = tf.keras.losses.MeanSquaredError()
         self._mae = tf.keras.losses.MeanAbsoluteError()
 
     def __call__(self, discriminator_real_out, discriminator_generated_out, coefficient: float = 1):
@@ -102,21 +99,50 @@ class GAN(tf.keras.models.Model):
 
 class CycleGAN(tf.keras.models.Model):
 
-    def __init__(self, input_dim: int = 256, seed: Any = None, lambda_: float = 10):
+    def __init__(self, input_dim: int = 256, seed: Any = None, lambda_: float = 10, upsampling: Literal["deconv", "upconv"] = "deconv",
+                 discriminator_loss_buffer_length: int = 50, generator: Literal["unet", "resnet"] = "unet", padding: Literal["default", "reflect"] = "default",
+                 residual_blocks: int = 9, resnet_filters: int = 64, discriminator_noise: bool = False, instance_normalization: bool = False):
         super(CycleGAN, self).__init__()
 
         self.seed: Any = seed
 
         self.lambda_ = lambda_
 
+        self.discr_noise = discriminator_noise
+
+        self.generator_type = generator
+
+        if self.generator_type == "unet":
+            self.t2i_generator: tf.keras.models.Model = UNetGenerator(input_dim=input_dim, seed=seed,
+                                                                      upsampling=upsampling,
+                                                                      instance_normalization=instance_normalization)
+            self.i2t_generator: tf.keras.models.Model = UNetGenerator(input_dim=input_dim, seed=seed,
+                                                                      upsampling=upsampling,
+                                                                      instance_normalization=instance_normalization)
+
+        elif self.generator_type == "resnet":
+            self.t2i_generator: tf.keras.models.Model = ResNetGenerator(input_dim=input_dim, seed=seed,
+                                                                        residual_blocks=residual_blocks,
+                                                                        filters=resnet_filters, padding_type=padding,
+                                                                        instance_normalization=instance_normalization)
+            self.i2t_generator: tf.keras.models.Model = ResNetGenerator(input_dim=input_dim, seed=seed,
+                                                                        residual_blocks=residual_blocks,
+                                                                        filters=resnet_filters, padding_type=padding,
+                                                                        instance_normalization=instance_normalization)
+
+            self.t2i_generator.build(input_shape=(None, 256, 256, 3))
+            self.i2t_generator.build(input_shape=(None, 256, 256, 3))
+        else:
+            raise RuntimeError(f"Wrong generator type. Only 'unet' or 'resnet' are valid, got {self.generator_type}")
+
         self.input_domain_discriminator: tf.keras.models.Model = PatchGANDiscriminator(input_dim=input_dim,
-                                                                                       seed=seed, comparing=False)
-        self.i2t_generator: tf.keras.models.Model = UNetGenerator(input_dim=input_dim, seed=seed)
-
+                                                                                       seed=seed, comparing=False,
+                                                                                       add_noise=self.discr_noise,
+                                                                                       instance_normalization=instance_normalization)
         self.target_domain_discriminator: tf.keras.models.Model = PatchGANDiscriminator(input_dim=input_dim,
-                                                                                        seed=seed, comparing=False)
-        self.t2i_generator: tf.keras.models.Model = UNetGenerator(input_dim=input_dim, seed=seed)
-
+                                                                                        seed=seed, comparing=False,
+                                                                                        add_noise=self.discr_noise,
+                                                                                        instance_normalization=instance_normalization)
         self.generator_loss = GeneratorLoss(lambda_=lambda_)
         self.discriminator_loss = DiscriminatorLoss()
         self.test_metric = tf.keras.metrics.RootMeanSquaredError()
@@ -125,6 +151,12 @@ class CycleGAN(tf.keras.models.Model):
         self.input_domain_discriminator_optimizer = None
         self.t2i_generator_optimizer = None
         self.target_domain_discriminator_optimizer = None
+        self.optimizers = []
+
+        self.input_discriminator_loss_buffer = []
+        self.target_discriminator_loss_buffer = []
+
+        self.buffer_length = discriminator_loss_buffer_length
 
     def compile(self, input_domain_discriminator_optimizer=None, i2t_generator_optimizer=None,
                 target_domain_discriminator_optimizer=None, t2i_generator_optimizer=None, **kwargs):
@@ -134,13 +166,16 @@ class CycleGAN(tf.keras.models.Model):
         self.t2i_generator_optimizer = t2i_generator_optimizer
         self.target_domain_discriminator_optimizer = target_domain_discriminator_optimizer
 
+        self.optimizers = [self.i2t_generator_optimizer,
+                           self.input_domain_discriminator_optimizer,
+                           self.t2i_generator_optimizer,
+                           self.target_domain_discriminator_optimizer]
+
         super(CycleGAN, self).compile(**kwargs)
 
     def call(self, inputs, training=None, mask=None):
-        pass
-
-    # def fit(self, *args, **kwargs):
-    #     super(CycleGAN, self).fit(*args, **kwargs)
+        raise NotImplemented("CycleGAN call is not implemented, please use generate_i2t and generate_t2i methods"
+                             "instead.")
 
     def train_step(self, data):
         real_input_domain_image, real_target_domain_image = data
@@ -162,6 +197,13 @@ class CycleGAN(tf.keras.models.Model):
             input_domain_discriminator_fake = self.input_domain_discriminator(fake_input_domain_image, training=True)
             target_domain_discriminator_fake = self.target_domain_discriminator(fake_target_domain_image, training=True)
 
+            if len(self.input_discriminator_loss_buffer) == self.buffer_length:
+                self.input_discriminator_loss_buffer = self.input_discriminator_loss_buffer[1:]
+                self.target_discriminator_loss_buffer = self.target_discriminator_loss_buffer[1:]
+
+            self.input_discriminator_loss_buffer.append((input_domain_discriminator_real, input_domain_discriminator_fake))
+            self.target_discriminator_loss_buffer.append((target_domain_discriminator_real, target_domain_discriminator_fake))
+
             i2t_generator_loss, _, _ = self.generator_loss(target_domain_discriminator_fake)
             t2i_generator_loss, _, _ = self.generator_loss(input_domain_discriminator_fake)
 
@@ -173,11 +215,16 @@ class CycleGAN(tf.keras.models.Model):
 
             cycle_loss = input_domain_cycle_loss + target_domain_cycle_loss
 
-            total_i2t_generator_loss = i2t_generator_loss + cycle_loss + target_domain_identity_loss
-            total_t2i_generator_loss = t2i_generator_loss + cycle_loss + input_domain_identity_loss
+            if len(self.input_discriminator_loss_buffer) == self.buffer_length:
+                input_domain_discriminator_loss = np.mean([self.discriminator_loss(input_real, input_fake, coefficient=.5) for input_real, input_fake in self.input_discriminator_loss_buffer])
+                target_domain_discriminator_loss = np.mean([self.discriminator_loss(target_real, target_fake, coefficient=.5) for target_real, target_fake in self.target_discriminator_loss_buffer])
+            else:
+                input_domain_discriminator_loss = self.discriminator_loss(input_domain_discriminator_real, input_domain_discriminator_fake, coefficient=.5)
+                target_domain_discriminator_loss = self.discriminator_loss(target_domain_discriminator_real, target_domain_discriminator_fake, coefficient=.5)
 
-            input_domain_discriminator_loss = self.discriminator_loss(input_domain_discriminator_real, input_domain_discriminator_fake, coefficient=.5)
-            target_domain_discriminator_loss = self.discriminator_loss(target_domain_discriminator_real, target_domain_discriminator_fake, coefficient=.5)
+            # Identity loss helps to retain original colors which is not wanted for our case of i2i translation.
+            total_i2t_generator_loss = i2t_generator_loss + cycle_loss + target_domain_identity_loss * 0
+            total_t2i_generator_loss = t2i_generator_loss + cycle_loss + input_domain_identity_loss * 0
 
         i2t_generator_grads = tape.gradient(total_i2t_generator_loss,
                                             self.i2t_generator.trainable_variables)
@@ -220,31 +267,5 @@ class CycleGAN(tf.keras.models.Model):
 
 
 if __name__ == "__main__":
+
     pass
-    # import wandb
-    #
-    # wandb.init(project="test-project", entity="golem-rm")
-    #
-    # wandb.config = {
-    #     "learning_rate": 2e-4,
-    #     "epochs": 2,
-    #     "batch_size": 8,
-    #     "split": 0.2
-    # }
-    #
-    # with tf.compat.v1.Session() as sess:
-    #
-    #     model = GAN(input_dim=256, seed=666)
-    #     model.compile(discriminator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5),
-    #                   generator_optimizer=tf.keras.optimizers.Adam(2e-4, beta_1=0.5))
-    #
-    #     (train_input_dataset, test_input_dataset, val_input_dataset, train_target_dataset, test_target_dataset,
-    #      val_target_dataset) = train_test_load(input_img_dir="../processed/300x300/satellite", target_img_dir="../processed/300x300/maps",
-    #                                            val_test_size=.2, paired=True, augmentation=False)
-    #
-    #     training_dataset = tf.data.Dataset.zip((train_input_dataset, train_target_dataset))
-    #
-    #     model.fit(training_dataset, epochs=2)
-    #     #
-    #     # sample = plt.imread("../processed/300x300/satellite/0063.jpg")
-    #     # pred = model.generator.predict(sample[tf.newaxis], batch_size=1)

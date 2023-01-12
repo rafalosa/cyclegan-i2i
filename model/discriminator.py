@@ -1,17 +1,23 @@
 import tensorflow as tf
 from typing import List, Any
-from .sampling import downsampler
-import matplotlib.pyplot as plt
-import numpy as np
+from .model_components import downsampler
+import tensorflow_addons as tfda
 
 
 class PatchGANDiscriminator(tf.keras.models.Model):
 
-    def __init__(self, input_dim: int = 300, seed: Any = None, comparing: bool = True):
+    def __init__(self, input_dim: int = 300, seed: Any = None, comparing: bool = True, add_noise: bool = False,
+                 instance_normalization: bool = False):
         super(PatchGANDiscriminator, self).__init__()
 
-        self.comparing = comparing
         channels = 3
+
+        self.noisy = add_noise
+
+        if self.noisy:
+            self.noise_layer = tf.keras.layers.GaussianNoise(stddev=1, input_shape=(input_dim, input_dim, channels))
+
+        self.comparing = comparing
 
         if comparing:
             self.concatenate_layer = tf.keras.layers.Concatenate()  # (batch_size, 300, 300, 6)
@@ -27,7 +33,10 @@ class PatchGANDiscriminator(tf.keras.models.Model):
         self.conv_layer = tf.keras.layers.Conv2D(512, 4, strides=1, kernel_initializer=initializer,
                                                  use_bias=False)   # (batch_size, 33, 33, 512)
 
-        self.bn = tf.keras.layers.BatchNormalization()
+        if instance_normalization:
+            self.bn = tfda.layers.InstanceNormalization()
+        else:
+            self.bn = tf.keras.layers.BatchNormalization()
 
         self.relu = tf.keras.layers.LeakyReLU()
 
@@ -36,9 +45,12 @@ class PatchGANDiscriminator(tf.keras.models.Model):
         self.last_layer = tf.keras.layers.Conv2D(1, 4, strides=1,
                                                  kernel_initializer=initializer)  # (batch_size, 32, 32, 1)
 
-    def call(self, inputs: List, training=None, mask=None):
+    def call(self, inputs, training=None, mask=None):
 
         x = inputs
+
+        if self.noisy:
+            x = self.noise_layer(x)
 
         if self.comparing:
             x = self.concatenate_layer(x)
@@ -55,18 +67,4 @@ class PatchGANDiscriminator(tf.keras.models.Model):
 
 if __name__ == "__main__":
 
-    DIM = 300
-    SHAPE = (DIM, DIM, 3)
-    disc = PatchGANDiscriminator(input_dim=DIM, seed=666)
-    sample = np.array(plt.imread("../processed/300x300/satellite/0063.jpg"), dtype="uint8")
-    img = disc.predict([sample[tf.newaxis], sample[tf.newaxis]], batch_size=1)
-    plt.subplot(1, 3, 1)
-    plt.imshow(sample)
-    plt.title("Original image")
-    plt.subplot(1, 3, 2)
-    plt.imshow(sample)
-    plt.title("Compared image")
-    plt.subplot(1, 3, 3)
-    plt.imshow(img.reshape((32, 32, 1)))
-    plt.title("Untrained discriminator output")
-    plt.show()
+    pass
